@@ -305,53 +305,68 @@ project/
 
 ```python
 # High-level pseudocode (framework-agnostic)
-for epoch in range(E):
-    for X, Y in dataloader:
-        # 1) Forward through ConvLSTM
-        unary_logits = convlstm(X)           # [N,T,H,W,C_classes]
-
-        # 2) PGM inference (differentiable mean-field)
-        Q = mean_field_inference(unary_logits, pairwise_weight, iters=K)
-
-        # 3) Losses
-        loss_unary = cross_entropy(unary_logits, Y)
-        loss_struct = nll(Q, Y)              # structured NLL or KL
-        loss_cons = consistency_penalty(Q)   # optional temporal smoothness
-
-        loss = α*loss_unary + β*loss_struct + γ*loss_cons
-
-        # 4) Backward & step
-        optimizer.zero_grad()
-        loss.backward()
-        clip_grad_norm_(convlstm.parameters(), max_norm=1.0)
-        optimizer.step()
-
-    validate()  # early stopping
 ```
+FUNCTION optimize_convlstm_with_evotorch(num_generations, population_size):
+    PRINT "Starting Neuroevolution with EvoTorch and CMA-ES"
 
-### Evolutionary Search Loop
+    // 1. Setup Model and Data
+    DEFINE model_parameters (input_size, hidden_size, num_layers)
+    DEFINE data_dimensions (batch_size, sequence_length, height, width)
 
-```python
-population = init_population(pop_size, search_space)
-for gen in range(G):
-    # Parallel evaluation
-    fitness = parallel_eval(population, low_fidelity=True)
-    elites = select_elites(population, fitness, k=elitism)
-    parents = tournament_selection(population, fitness, k=tournament_k)
+    CREATE model AS a new ConvLSTM with model_parameters
+    CREATE sample_input AS a random tensor with data_dimensions
+    CREATE target_output AS a tensor of zeros (representing a uniform distribution)
 
-    offspring = []
-    while len(offspring) < pop_size - len(elites):
-        p1, p2 = sample(parents, 2)
-        child = crossover(p1, p2, rate=crossover_rate)
-        child = mutate(child, rate=mutation_rate, bounds=search_space)
-        offspring.append(child)
+    CALCULATE num_params = total number of parameters in the model
+    PRINT "Optimizing " + num_params + " parameters."
 
-    population = elites + offspring
+    // 2. Define the Objective Function for the optimizer
+    FUNCTION objective_function(params):
+        // 'params' is a flat 1D vector of model weights from the optimizer
 
-# Full-fidelity evaluation of top-K individuals
-best = evaluate_top(population, full_fidelity=True)
-save(best)
-```
+        // Load the flat parameter vector into the model
+        SET model parameters FROM params
+
+        // Perform a forward pass
+        CALCULATE model_output = model.forward(sample_input)
+
+        // Reshape outputs for loss calculation
+        RESHAPE model_output to (batch_size * sequence_length, hidden_size)
+        RESHAPE target_output to (batch_size * sequence_length, hidden_size)
+
+        // Convert model outputs to log-probabilities and targets to probabilities
+        CALCULATE log_probs = log_softmax(model_output)
+        CALCULATE target_probs = softmax(target_output)
+
+        // Calculate the KL Divergence loss
+        CALCULATE loss = kl_divergence(log_probs, target_probs)
+
+        RETURN loss
+    END FUNCTION
+
+    // 3. Configure the Optimization Problem for EvoTorch
+    CREATE problem with properties:
+        objective_sense = "minimize"
+        objective_function = objective_function
+        solution_length = num_params
+        initial_bounds = (-0.1, 0.1)
+
+    // 4. Setup and Run the CMA-ES Algorithm
+    CREATE searcher AS a new CMAES instance with:
+        problem = problem
+        initial_standard_deviation = 0.1
+        population_size = population_size
+
+    PRINT "Running optimization for " + num_generations + " generations..."
+    searcher.run(num_generations)
+
+    // 5. Get and Display Results
+    GET best_params, best_loss FROM searcher status
+    PRINT "Optimization Finished"
+    PRINT "Best Loss (KL Divergence): " + best_loss
+
+    RETURN best_params, best_loss
+END FUNCTION
 
 ---
 
