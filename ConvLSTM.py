@@ -132,8 +132,8 @@ class TestConvLSTM:
             output = model.forward(sample_input)  # (batch_size, seq_len, hidden_size)
 
             # reshape to (batch_size * seq_len, hidden_size)
-            output_reshaped = output.view(batch_size * seq_len, hidden_size)
-            target_reshaped = target_output.view(batch_size * seq_len, hidden_size)
+            output_reshaped = output.reshape(batch_size * seq_len, hidden_size)
+            target_reshaped = target_output.reshape(batch_size * seq_len, hidden_size)
 
             # produce proper (log_probs, probs) for KLDivLoss
             log_probs, target_probs = self.JointProbability(output_reshaped, target_reshaped)
