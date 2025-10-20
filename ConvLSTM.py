@@ -53,6 +53,24 @@ class ConvLSTM(nn.Module):
 
 
 class TestConvLSTM():
+    def JointProbablity(self):
+        print(f"Loaded {len(self.parsing)} data entries from rec.db.")
+
+
+
+        point_x = self.tokens(self.samplesx)
+        point_y = self.tokens(self.samplesy)
+
+
+        self.surrogate_dist, self.cand_dist = self.probablity_dist(point_x, point_y)
+
+
+
+    def probablity_dist(self, pointx, pointy):
+        prob_func = lambda var: dist.Categorical(probs=torch.ones_like(var) / var.shape[-1])
+        return(prob_func(pointx), prob_func(pointy))
+
+
     def test_convlstm_forward_pass_and_output_shape(self):
         """Tests the forward pass and the output shape of the ConvLSTM."""
         # Define input parameters
@@ -100,8 +118,17 @@ class TestConvLSTM():
             # Perform a forward pass
             output = model.forward(sample_input)
             
-            # Calculate a loss (e.g., Mean Squared Error between output and target)
-            loss = nn.functional.mse_loss(output, target_output)
+            # Calculate KL Divergence loss for joint distributions
+            # The output and target are reshaped to treat the sequence as a single batch
+            output_reshaped = output.view(batch_size * seq_len, hidden_size)
+            target_reshaped = target_output.view(batch_size * seq_len, hidden_size)
+
+            # The input to KLDivLoss should be log-probabilities
+            log_probs, target_probs = self.JointProbablity(output_reshaped, target_reshaped)
+
+            # Compute the KL Divergence loss
+            # 'batchmean' reduction averages the loss over the batch dimension
+            loss = nn.functional.kl_div(log_probs, target_probs, reduction='batchmean')
             
             return loss
 
@@ -132,7 +159,7 @@ class TestConvLSTM():
         best_params, best_loss = searcher.status["best"], searcher.status["best_eval"]
 
         print("\n--- Optimization Finished ---")
-        print(f"Best Loss (MSE): {best_loss:.6f}")
+        print(f"Best Loss (KL Divergence): {best_loss:.6f}")
         # You can now load the best parameters back into your model if needed
         # nn.utils.vector_to_parameters(best_params, model.parameters())
 
